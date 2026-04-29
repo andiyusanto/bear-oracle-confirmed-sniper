@@ -15,6 +15,9 @@ Anti-decoy filters (after Gate 7):
   3. Consecutive tick check: last 3 ticks all below window open
   4. Micro-rebound veto: last 2 ticks show UP recovery > rebound_veto_ratio
   5. Liquidity check: NO token depth < no_book_depth_min_usd
+
+Shadow mode: inject a ShadowLogger at construction time to record gate-level
+rejection telemetry without any code-path branching in the caller.
 """
 
 import logging
@@ -33,9 +36,15 @@ log = logging.getLogger("bear.engine")
 class BearEngine:
     ASSET_FILL_COOLDOWN = 10.0
 
-    def __init__(self, feeds: PriceFeeds, regime: RegimeMonitor) -> None:
+    def __init__(
+        self,
+        feeds: PriceFeeds,
+        regime: RegimeMonitor,
+        shadow=None,  # Optional[ShadowLogger] — import avoided to keep circular imports out
+    ) -> None:
         self.feeds = feeds
         self.regime = regime
+        self._shadow = shadow
         self._traded_windows: set[str] = set()
         self._asset_fill_ts: dict[str, float] = {}
 
@@ -43,29 +52,47 @@ class BearEngine:
         now = time.time()
         ttl = token.end_ts - now
         asset = token.asset
+        delta = 0.0  # populated after Gate 3; used in shadow records throughout
+
+        def _reject(gate: str, reason: str) -> None:
+            if self._shadow:
+                regime_str = self.regime.current_regime(asset).value
+                self._shadow.record(token, gate, reason, ttl, delta, regime_str)
 
         # ── GATE 1: UTC hour blackout ─────────────────────────────────
         utc_hour = datetime.now(tz=timezone.utc).hour
         if utc_hour in CFG.blackout_hours:
+            _reject("GATE_1_BLACKOUT", f"utc_hour={utc_hour}")
             return None
 
-        # ── Not already traded this window ───────────────────────────
+        # ── Not already traded this window (de-dup guard, not logged) ─
         wkey = f"{asset}_{token.window_ts}"
         if wkey in self._traded_windows:
             return None
 
-        # Per-asset cooldown after any fill
         if now - self._asset_fill_ts.get(asset, 0.0) < self.ASSET_FILL_COOLDOWN:
             return None
 
         # ── GATE 2: Regime == BEAR ────────────────────────────────────
-        if self.regime.current_regime(asset) != RegimeState.BEAR:
+        regime_state = self.regime.current_regime(asset)
+        if regime_state != RegimeState.BEAR:
+            diag = self.regime.all_diagnostics(asset)
+            failed = []
+            if not diag["ema"]:
+                failed.append("EMA")
+            if not diag["funding"]:
+                failed.append("funding")
+            if not diag["chainlink"]:
+                failed.append("CL_1h")
+            reason = f"regime={regime_state.value} failed=[{','.join(failed) or 'all'}]"
+            _reject("GATE_2_REGIME", reason)
             return None
 
         # ── GATE 3: Oracle direction == DOWN ─────────────────────────
         self.feeds.capture_opening(asset, token.window_ts)
         delta = self.feeds.oracle_delta(asset, token.window_ts)
         if delta >= 0:
+            _reject("GATE_3_NOT_DOWN", f"delta={delta:.4f}%")
             return None
 
         abs_delta = abs(delta)
@@ -81,19 +108,35 @@ class BearEngine:
             max_entry = CFG.snipe_entry_weak_sec
             tier = "WEAK"
         else:
+            _reject(
+                "GATE_5_DELTA_MIN",
+                f"abs_delta={abs_delta:.4f}% < min={CFG.min_delta_pct:.4f}%",
+            )
             return None
 
         if ttl > max_entry:
+            _reject(
+                "GATE_4_TTL_WINDOW",
+                f"ttl={ttl:.0f}s > max_entry={max_entry:.0f}s tier={tier}",
+            )
             return None
 
         # ── GATE 5: Delta >= min_delta_pct ────────────────────────────
         if abs_delta < CFG.min_delta_pct:
+            _reject(
+                "GATE_5_DELTA_MIN",
+                f"abs_delta={abs_delta:.4f}% < min={CFG.min_delta_pct:.4f}%",
+            )
             return None
 
         # ── GATE 6: Binance confirms DOWN ────────────────────────────
         if not self.feeds.binance_agrees(asset, "DOWN", token.window_ts):
             bn_age = time.time() - self.feeds.bn_ts.get(asset, 0)
-            if bn_age < 30.0:  # only block when Binance data is fresh
+            if bn_age < 30.0:
+                _reject(
+                    "GATE_6_BINANCE",
+                    f"bn_disagrees bn_age={bn_age:.0f}s delta={delta:.4f}%",
+                )
                 log.debug(
                     "GATE6 SKIP %s: Binance disagrees (delta=%.4f%% bn_age=%.0fs)",
                     asset,
@@ -105,10 +148,15 @@ class BearEngine:
         # ── GATE 7: NO token price in range ──────────────────────────
         price = token.book_price
         if price < CFG.no_price_min or price > CFG.no_price_max:
+            _reject(
+                "GATE_7_PRICE_RANGE",
+                f"price=${price:.3f} range=[${CFG.no_price_min},${CFG.no_price_max}]",
+            )
             return None
 
         # ── ANTI-DECOY 1: Ghost-zone hard block ──────────────────────
         if ttl < CFG.snipe_exit_sec:
+            _reject("DECOY_1_GHOST", f"ttl={ttl:.0f}s < {CFG.snipe_exit_sec:.0f}s")
             log.debug(
                 "GHOST BLOCK %s: TTL=%.0fs < %.0fs", asset, ttl, CFG.snipe_exit_sec
             )
@@ -117,6 +165,10 @@ class BearEngine:
         # ── ANTI-DECOY 2: Volatility damper ──────────────────────────
         vol = self.feeds.five_min_range_pct(asset)
         if vol > CFG.volatility_damper_pct * 100:
+            _reject(
+                "DECOY_2_VOLATILITY",
+                f"5m_range={vol:.4f}% > {CFG.volatility_damper_pct * 100:.4f}%",
+            )
             log.debug(
                 "VOL DAMP %s: 5m range=%.4f%% > %.4f%%",
                 asset,
@@ -128,6 +180,7 @@ class BearEngine:
         # ── ANTI-DECOY 3: Consecutive down ticks ─────────────────────
         n = CFG.consecutive_down_ticks_required
         if not self.feeds.consecutive_down_ticks(asset, token.window_ts, n):
+            _reject("DECOY_3_TICKS", f"< {n} consecutive ticks below window open")
             log.debug("TICK FAIL %s: < %d consecutive ticks below open", asset, n)
             return None
 
@@ -136,21 +189,25 @@ class BearEngine:
         if len(history) >= 2:
             opening = self.feeds.openings.get(asset, {}).get(token.window_ts, 0)
             if opening > 0:
-                # Drop from opening to lowest of last 2 ticks
                 last2 = [p for _, p in history[-2:]]
                 low = min(last2)
-                drop = opening - low  # positive when price fell
-                recovery = last2[-1] - low  # positive when price bounced
+                drop = opening - low
+                recovery = last2[-1] - low
                 if drop > 0 and recovery / drop > CFG.rebound_veto_ratio:
-                    log.debug(
-                        "REBOUND VETO %s: recovery=%.1f%% of drop",
-                        asset,
-                        recovery / drop * 100,
+                    pct = recovery / drop * 100
+                    _reject(
+                        "DECOY_4_REBOUND",
+                        f"recovery={pct:.1f}% of drop > {CFG.rebound_veto_ratio * 100:.0f}%",
                     )
+                    log.debug("REBOUND VETO %s: recovery=%.1f%% of drop", asset, pct)
                     return None
 
         # ── ANTI-DECOY 5: Liquidity check ────────────────────────────
         if token.book_depth_usd < CFG.no_book_depth_min_usd:
+            _reject(
+                "DECOY_5_DEPTH",
+                f"depth=${token.book_depth_usd:.0f} < ${CFG.no_book_depth_min_usd:.0f}",
+            )
             log.debug(
                 "DEPTH SKIP %s: depth=$%.0f < $%.0f",
                 asset,
@@ -173,6 +230,18 @@ class BearEngine:
         )
 
         ticks = self.feeds.consecutive_down_ticks(asset, token.window_ts, n)
+
+        # Log the PASS in shadow mode — this is the would-be trade
+        if self._shadow:
+            regime_str = self.regime.current_regime(asset).value
+            self._shadow.record(
+                token,
+                "PASS",
+                f"delta={delta:.4f}% tier={tier} price=${price:.3f} ttl={ttl:.0f}s",
+                ttl,
+                delta,
+                regime_str,
+            )
 
         log.info(
             "SIGNAL %s NO @ $%.3f | delta=%.4f%% tier=%s ttl=%.0fs depth=$%.0f",
@@ -198,7 +267,6 @@ class BearEngine:
         now = time.time()
         self._traded_windows.add(f"{asset}_{window_ts}")
         self._asset_fill_ts[asset] = now
-        # Prune entries older than 30 minutes
         self._traded_windows = {
             w for w in self._traded_windows if int(w.split("_")[1]) + 1800 > now
         }

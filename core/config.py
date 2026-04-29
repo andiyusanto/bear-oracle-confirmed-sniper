@@ -95,6 +95,9 @@ class Config:
     halt_wr_min_trades: int = 20  # rolling window size for WR check
 
     # ── Execution ───────────────────────────────────────────────────
+    shadow_mode: bool = (
+        False  # gate-level logging, zero trades (for strategy verification)
+    )
     paper_mode: bool = True
     stake_per_trade_usd: float = 3.0  # flat stake — not Kelly
     min_shares: float = 5.0  # Polymarket minimum order size

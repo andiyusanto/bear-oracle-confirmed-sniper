@@ -44,11 +44,13 @@ line — not the bull bot's 62.2%.
 ## Architecture
 
 ```
-bot.py                       Main async event loop
+shadow.py                    Shadow mode entrypoint (zero trades — verify first)
+bot.py                       Main async event loop (paper / live)
 core/
   config.py                  CFG dataclass — single source of all thresholds
   models.py                  RegimeState enum, Token, OracleState, Signal, Trade
-  database.py                SQLite (bear_trades.db) with regime_log table
+  database.py                SQLite (bear_trades.db) with regime_log + shadow_log
+  shadow.py                  ShadowLogger: in-memory gate telemetry, batch SQLite flush
 feeds/
   prices.py                  Chainlink RTDS + Binance WebSocket + price history
   markets.py                 Gamma API — NO token discovery only
@@ -57,17 +59,39 @@ engine/
   signal.py                  BearEngine: 7 gates + 5 anti-decoy filters
   risk.py                    RiskManager: kill switch, daily cap, WR halt
 execution/
-  executor.py                Paper and live trade execution (to be written)
+  executor.py                Paper and live trade execution
 ui/
   dashboard.py               Rich terminal UI with REGIME panel
 analysis/
-  analyze.py                 Trade analysis with regime overlay (to be written)
+  shadow_report.py           Post-run shadow mode gate breakdown and PASS signals
+  analyze.py                 Live trade analysis with regime overlay
 setup.py                     Derive API creds from private key → .env
 wrap_pusd.py                 Convert USDC.e → pUSD via Collateral Onramp
 approve_usdc.py              On-chain pUSD approve() for V2 CLOB contracts
 withdraw.py                  Interactive pUSD withdrawal
 redeem_now.py                Manual CTF redemption
 ```
+
+### Build Status
+
+| Module | Status |
+|--------|--------|
+| `core/config.py` | Done |
+| `core/models.py` | Done |
+| `core/database.py` | Done |
+| `core/shadow.py` | Done |
+| `feeds/prices.py` | Done |
+| `feeds/markets.py` | Done |
+| `feeds/regime.py` | Done |
+| `engine/signal.py` | Done |
+| `engine/risk.py` | Done |
+| `ui/dashboard.py` | Done |
+| `shadow.py` | Done |
+| `analysis/shadow_report.py` | Done |
+| `bot.py` | Pending |
+| `execution/executor.py` | Pending |
+| `analysis/analyze.py` | Pending |
+| `setup.py`, on-chain scripts | Pending |
 
 ---
 
@@ -123,6 +147,52 @@ Applied in order; first failure rejects the signal:
 
 ---
 
+## Shadow Mode
+
+Shadow mode runs the complete pipeline — feeds, regime checks, market
+discovery, and signal evaluation — with **zero trades**. Every gate evaluation
+is logged to SQLite so you can verify the strategy before risking capital.
+
+```bash
+python shadow.py                  # run until Ctrl+C
+python shadow.py --duration 3600  # stop after 1 hour
+python shadow.py --db my.db       # custom DB path (default: shadow_run.db)
+```
+
+**What it verifies:**
+- Chainlink RTDS and Binance feeds are streaming live prices
+- Regime monitor is evaluating all 3 sub-checks correctly
+- NO tokens are being discovered for BTC/ETH/SOL markets
+- Signal gates are firing and rejecting at the right stages
+- PASS signals are appearing (strategy has live edge before paper trading)
+
+The live dashboard shows:
+- Per-asset feed health (Chainlink price, Binance price, staleness, 1h net)
+- Per-asset regime state with sub-check breakdown (EMA / Funding / CL 1h)
+- Gate rejection breakdown with bar chart and percentages
+- Eval rate, PASS rate, and market count in the footer
+
+**After the run, generate a full report:**
+
+```bash
+python analysis/shadow_report.py                    # full breakdown
+python analysis/shadow_report.py --passes-only      # just PASS signals
+python analysis/shadow_report.py --since 3600       # last 1 hour only
+```
+
+The report shows gate rejection share, per-asset breakdown, regime filter
+efficiency, hourly PASS rate (with blackout hours marked), and the last 30
+would-be PASS signals with price, delta, TTL, and reason string.
+
+**Minimum viable shadow run before paper trading:**
+- ≥ 2 hours of data
+- At least one PASS signal per asset observed
+- Gate 2 (regime) accounting for the majority of rejections — this is expected
+  and correct (markets spend most time outside bear regime)
+- No PASS signals during blackout hours
+
+---
+
 ## Polymarket V2 Infrastructure
 
 Active since April 28, 2026. Collateral: **pUSD** (not USDC.e).
@@ -160,13 +230,23 @@ python wrap_pusd.py    # convert USDC.e → pUSD (one-time)
 python approve_usdc.py # approve pUSD for CLOB spending (one-time)
 ```
 
-### 4. Run in paper mode
+### 4. Run shadow mode (verify strategy setup)
+
+```bash
+python shadow.py --duration 7200   # 2-hour minimum recommended
+python analysis/shadow_report.py   # review gate breakdown and PASS signals
+```
+
+Do not proceed to paper trading until shadow mode confirms:
+- Feeds streaming, regime evaluating, PASS signals appearing
+
+### 5. Run in paper mode
 
 ```bash
 python bot.py
 ```
 
-### 5. Run live (after paper validates ≥ 20 trades at WR > 52%)
+### 6. Run live (after paper validates ≥ 20 trades at WR > 52%)
 
 ```bash
 python bot.py --live --confirm-live --accept-risk --portfolio 500
@@ -190,6 +270,12 @@ python bot.py --live --confirm-live --accept-risk --portfolio 500
 ## Analysis
 
 ```bash
+# Shadow mode verification (before paper/live)
+python analysis/shadow_report.py
+python analysis/shadow_report.py --passes-only
+python analysis/shadow_report.py --since 3600
+
+# Live trade analysis (paper / live mode)
 python analysis/analyze.py                    # summary stats
 python analysis/analyze.py --watch            # live tail
 python analysis/analyze.py --regime           # regime overlay per trade

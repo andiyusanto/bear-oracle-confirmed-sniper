@@ -69,6 +69,23 @@ class Database:
                 clob_balance REAL,
                 reason TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS shadow_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset TEXT NOT NULL,
+                token_id TEXT NOT NULL,
+                window_ts INTEGER NOT NULL,
+                ttl REAL NOT NULL,
+                no_price REAL NOT NULL,
+                oracle_delta REAL NOT NULL,
+                regime TEXT NOT NULL,
+                gate_blocked TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                timestamp REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_shadow_ts ON shadow_log(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_shadow_gate ON shadow_log(gate_blocked);
+            CREATE INDEX IF NOT EXISTS idx_shadow_asset ON shadow_log(asset);
         """)
 
     # ── Trade methods ────────────────────────────────────────────────
@@ -247,6 +264,64 @@ class Database:
                 (time.time(), round(portfolio, 4), clob_balance, reason),
             )
             self.conn.commit()
+
+    # ── Shadow log methods ───────────────────────────────────────────
+
+    def save_shadow_batch(self, records: list) -> None:
+        """Batch-insert ShadowRecord objects.  Called by ShadowLogger.flush()."""
+        with self._lock:
+            self.conn.executemany(
+                "INSERT INTO shadow_log "
+                "(asset, token_id, window_ts, ttl, no_price, oracle_delta, "
+                "regime, gate_blocked, reason, timestamp) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        r.asset,
+                        r.token_id,
+                        r.window_ts,
+                        r.ttl,
+                        r.no_price,
+                        r.oracle_delta,
+                        r.regime,
+                        r.gate_blocked,
+                        r.reason,
+                        r.timestamp,
+                    )
+                    for r in records
+                ],
+            )
+            self.conn.commit()
+
+    def shadow_gate_counts(self, since_ts: float = 0.0) -> dict[str, int]:
+        """Per-gate rejection counts since a timestamp (0 = all time)."""
+        cur = self.conn.execute(
+            "SELECT gate_blocked, COUNT(*) FROM shadow_log "
+            "WHERE timestamp >= ? GROUP BY gate_blocked",
+            (since_ts,),
+        )
+        return {row[0]: row[1] for row in cur.fetchall()}
+
+    def shadow_pass_samples(self, n: int = 20) -> list[dict]:
+        """Most-recent PASS records — the would-be trades."""
+        cur = self.conn.execute(
+            "SELECT * FROM shadow_log WHERE gate_blocked='PASS' "
+            "ORDER BY timestamp DESC LIMIT ?",
+            (n,),
+        )
+        return self._rows(cur)
+
+    def shadow_recent(self, n: int = 50) -> list[dict]:
+        cur = self.conn.execute(
+            "SELECT * FROM shadow_log ORDER BY timestamp DESC LIMIT ?", (n,)
+        )
+        return self._rows(cur)
+
+    def shadow_total(self, since_ts: float = 0.0) -> int:
+        cur = self.conn.execute(
+            "SELECT COUNT(*) FROM shadow_log WHERE timestamp >= ?", (since_ts,)
+        )
+        return cur.fetchone()[0]
 
     # ── Helpers ──────────────────────────────────────────────────────
 
