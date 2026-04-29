@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/tengkorakhitam/polymarket-arbitrage-bot/oracle-confirmed-sniper/core/**)",
+      "Read(//home/tengkorakhitam/polymarket-arbitrage-bot/oracle-confirmed-sniper/feeds/**)",
+      "Read(//home/tengkorakhitam/polymarket-arbitrage-bot/oracle-confirmed-sniper/engine/**)",
+      "Read(//home/tengkorakhitam/polymarket-arbitrage-bot/oracle-confirmed-sniper/execution/**)",
+      "Read(//home/tengkorakhitam/polymarket-arbitrage-bot/oracle-confirmed-sniper/ui/**)",
+      "Read(//home/tengkorakhitam/polymarket-arbitrage-bot/oracle-confirmed-sniper/**)",
+      "Bash(pip list *)",
+      "Bash(mkdir -p core feeds engine execution ui analysis)",
+      "Bash(touch core/__init__.py feeds/__init__.py engine/__init__.py execution/__init__.py ui/__init__.py analysis/__init__.py)",
+      "Bash(ruff check *)",
+      "Bash(ruff format *)"
+    ]
+  }
+}
