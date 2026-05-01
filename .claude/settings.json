@@ -18,7 +18,12 @@
       "Bash(grep -n \"blackout\\\\|BLACKOUT\\\\|{0, 2\\\\|0, 2, 6\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/core/config.py)",
       "Bash(python3 -c ' *)",
       "Bash(python3 -m ruff check feeds/regime.py check_regime.py)",
-      "Bash(python3 -m ruff format feeds/regime.py check_regime.py)"
+      "Bash(python3 -m ruff format feeds/regime.py check_regime.py)",
+      "Bash(sqlite3 shadow_run.db \".tables\")",
+      "Bash(grep -n \"check_regime\\\\|0\\\\.08\\\\|\\\\$0\\\\.37\\\\|\\\\$0\\\\.53\\\\|\\\\$200\\\\|{0, 2\\\\|blackout_hours\\\\|Recent Changes\\\\|2026-05-01\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/README.md)",
+      "Bash(grep -n \"0\\\\.37\\\\|0\\\\.53\\\\|\\\\$200\\\\|{0, 2\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/README.md)",
+      "Bash(grep -n \"0\\\\.08\\\\|0\\\\.37\\\\|0\\\\.53\\\\|\\\\$200\\\\|{0, 2\\\\|blackout\\\\|check_regime\\\\|liquidity\\\\|Liquidity\\\\|volatility\\\\|Volatility\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/CLAUDE.md)",
+      "Bash(grep -n \"0\\\\.08\\\\|0\\\\.37\\\\|0\\\\.53\\\\|\\\\$200\\\\|{0, 2\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/CLAUDE.md)"
     ]
   }
 }

@@ -44,6 +44,7 @@ All WR displays use 44.7% as the reference line — not the bull bot's 62.2%.
 
 ```
 shadow.py                    Shadow mode entrypoint (zero trades — verify first)
+check_regime.py              One-shot regime diagnostic — shows pass/fail per sub-check without waiting 15 min
 bot.py                       Main async event loop (paper / live)
 core/
   config.py                  CFG dataclass — single source of all thresholds
@@ -87,6 +88,7 @@ redeem_now.py                Manual CTF redemption
 | `engine/risk.py` | Done |
 | `ui/dashboard.py` | Done |
 | `shadow.py` | Done |
+| `check_regime.py` | Done |
 | `analysis/shadow_report.py` | Done |
 | `setup.py` | Done |
 | `get_creds.py` | Done |
@@ -125,13 +127,13 @@ All must pass in order:
 
 | Gate | Condition |
 |------|-----------|
-| 1 | UTC hour NOT in `{0, 2, 6, 7, 17}` |
+| 1 | UTC hour NOT in blackout set (currently empty — no hours blocked) |
 | 2 | Asset regime == BEAR |
 | 3 | Oracle direction == DOWN (Chainlink delta < 0 vs window open) |
 | 4 | TTL within snipe window for delta tier (see table below) |
-| 5 | `abs(delta)` >= `min_delta_pct` |
+| 5 | `abs(delta)` >= `min_delta_pct` (0.010%) |
 | 6 | Binance 1-min confirms DOWN (fresh data only) |
-| 7 | NO token `best_ask` in `[$0.37, $0.53]` |
+| 7 | NO token `best_ask` in `[$0.30, $0.63]` |
 
 **Tiered snipe windows:**
 
@@ -146,10 +148,73 @@ All must pass in order:
 Applied in order; first failure rejects the signal:
 
 1. **Ghost-zone hard block** — TTL < 20s → reject unconditionally
-2. **Volatility damper** — 5-min Chainlink range > 0.08% → skip (whipsaw)
+2. **Volatility damper** — 5-min Chainlink range > 0.2% → skip (bear moves are larger than bull whipsaws; threshold widened from 0.08%)
 3. **Consecutive tick check** — require 3 consecutive ticks below window open
 4. **Micro-rebound veto** — last 2 ticks show UP recovery > 30% of drop → skip
-5. **Liquidity check** — NO token depth < $200 → skip
+5. **Liquidity check** — NO token depth < $100 → skip (NO side is thinner than YES; threshold lowered from $200)
+
+---
+
+## Recent Changes
+
+### 2026-05-01
+
+**`check_regime.py` — new one-shot regime diagnostic**
+
+Runs a single regime check cycle and exits immediately. Shows exactly which of
+the three sub-conditions (EMA / Funding / CL 1h) pass or fail per asset without
+waiting for the 15-minute shadow mode cycle.
+
+```bash
+source venv/bin/activate
+python check_regime.py
+```
+
+Example output:
+```
+  BTC: [NEUTRAL]
+    A) EMA(20) 4h : price=$77,014 ema=$79,200 → FAIL ✗
+    B) Funding    : rates=['0.000102', '0.000098', '0.000115'] neg=0/2 → FAIL ✗
+    C) CL 1h net  : no 1h history (bot running <60min) — now=$77,014
+
+Note: CL 1h check needs 60min of history — run shadow mode
+for >1h before the CL check can ever pass.
+```
+
+Run this first whenever the shadow dashboard shows 100% Gate 2 rejections to
+confirm whether the failure is market-driven (no bear regime) or a data issue.
+
+**`feeds/regime.py` — regime sub-check visibility fix**
+
+All sub-check result log calls (`EMA`, `Funding`, `CL 1h`) promoted from
+`log.debug()` to `log.info()`. Shadow mode runs at INFO level, so sub-check
+outcomes were previously invisible in both the terminal and the log file.
+
+After this fix every 15-minute regime cycle emits lines like:
+
+```
+REGIME CHECK BTC EMA: price=$77,014 ema=$79,200 → FAIL
+REGIME CHECK BTC Funding: rates=[...] negative=0/2 → FAIL
+REGIME CHECK BTC CL1h: no history near T-60min (bot may have just started)
+REGIME BTC: NEUTRAL (unchanged) ema=False fund=False cl=False
+```
+
+**Gate 7 — NO price range widened**
+
+Bear regime NO tokens price higher than bull regime YES tokens. Range updated
+from `$0.37–$0.53` to **`$0.30–$0.63`** to avoid rejecting valid mispriced
+entries that appear at both the cheap and expensive ends during confirmed bear moves.
+
+**Volatility damper — threshold widened**
+
+Updated from 0.08% to **0.2%**. Bear market moves are larger in absolute terms;
+the tighter threshold was filtering legitimate bear signals alongside whipsaws.
+
+**Liquidity check — threshold lowered**
+
+Updated from $200 to **$100**. NO token order books are structurally thinner than
+YES token books at equivalent market prices. The original $200 floor was rejecting
+valid markets where NO liquidity is real but shallow.
 
 ---
 
@@ -396,14 +461,17 @@ python analysis/shadow_report.py
 **Minimum criteria before proceeding to paper mode:**
 
 - [ ] Feeds streaming: Chainlink and Binance prices updating, CL age < 30s
-- [ ] Regime evaluating: EMA / Funding / CL 1h sub-checks firing per asset
+- [ ] Regime evaluating: EMA / Funding / CL 1h sub-checks visible in logs every 15 min
+- [ ] CL 1h check has had ≥60 min of price history to evaluate (bot must run continuously for 1h+ first)
 - [ ] NO tokens discovered: at least 1 active market per asset visible
 - [ ] Gate 2 (regime) accounts for majority of rejections — this is expected
-- [ ] At least one PASS signal per asset observed
-- [ ] Zero PASS signals during blackout hours `{0, 2, 6, 7, 17} UTC`
+- [ ] At least one PASS signal per asset observed (requires genuine bear regime conditions)
+- [ ] No PASS signals during any blackout hours configured in `CFG.blackout_hours`
 
-If regime is blocking 100% and no PASSes appear, the market is not in a bear
-regime. This is correct — do not loosen the filters. Wait for a genuine bear regime.
+If regime is blocking 100% and no PASSes appear after 1h+, the market is not
+in a bear regime. This is correct — do not loosen the filters. Wait for genuine
+bear conditions. Run `python check_regime.py` to diagnose exactly which sub-check
+is failing.
 
 **Kill shadow session when done:**
 
@@ -652,9 +720,12 @@ filter is too loose or the bear trend has ended.
 - Verify the asset slugs resolve: `curl "https://gamma-api.polymarket.com/events?slug=btc-updown-5m-<window_ts>"`
 
 **Regime always NEUTRAL**
-- This is correct behavior when the market is not in a bear regime
-- Check sub-checks individually: EMA (price vs 4h EMA), funding rate (perp funding negative?), CL 1h net (>0.3% drop over 60 min?)
-- Do not bypass or soften Gate 0 — no regime means no edge
+- This is correct behavior when the market is not in a bear regime — do not bypass or soften Gate 0
+- Run `python check_regime.py` to immediately see which sub-check is failing (EMA / Funding / CL 1h) and why
+- CL 1h net check **structurally cannot pass** until the bot has been running continuously for ≥60 minutes — always fails on fresh starts regardless of market direction
+- If EMA fails: price is above 4h EMA(20) — market is not trending down on the daily timeframe
+- If Funding fails: Binance perp funding is positive — longs are paying, not bearish positioning
+- Do not loosen the filters — if all three sub-checks are failing, the bot has no edge in current conditions
 
 **`setup.py` shows Allowance: $0.00`**
 - Known false alarm from CLOB backend allowance view

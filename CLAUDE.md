@@ -98,7 +98,7 @@ Never bypass or soft-fail the regime check. No trade is worth taking without it.
 
 ## Signal Gate Order (Gates 1–7, all must pass)
 
-1. UTC hour NOT in blackout set `{0, 2, 6, 7, 17}`
+1. UTC hour NOT in blackout set (currently empty — no hours blocked; set from shadow data)
 2. Asset regime == BEAR (from Gate 0)
 3. Oracle direction == DOWN
 4. Time remaining within snipe window by delta tier:
@@ -107,7 +107,7 @@ Never bypass or soft-fail the regime check. No trade is worth taking without it.
    - WEAK   (delta ≥ 0.010%): T-40s to T-25s
 5. Chainlink delta ≥ `min_delta_pct` from window opening (DOWN direction)
 6. Binance 1-min confirms DOWN (last completed candle close < open)
-7. NO token best_ask in `$0.37–$0.53`
+7. NO token best_ask in `$0.30–$0.63` (widened from $0.37–$0.53 — bear regime NO tokens price higher)
 
 If all 7 pass → proceed to anti-decoy filters → execute.
 
@@ -115,10 +115,10 @@ If all 7 pass → proceed to anti-decoy filters → execute.
 
 These are the primary WR defenders. Apply in this order:
 Ghost-zone hard block: TTL < 20s → reject unconditionally
-Volatility damper: 5-min Chainlink range > 0.08% → skip
+Volatility damper: 5-min Chainlink range > 0.2% → skip (was 0.08% — too tight for bear moves)
 Consecutive tick check: require 3 consecutive ticks below window open
 Micro-rebound veto: if last 2 ticks show UP recovery > 30% of the initial drop → skip
-Liquidity check: NO token depth < $200 → skip
+Liquidity check: NO token depth < $100 → skip (was $200 — NO tokens are thinner than YES)
 
 
 Never remove a filter without a data-backed justification from analyze.py
