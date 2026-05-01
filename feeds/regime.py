@@ -118,7 +118,7 @@ class RegimeMonitor:
                 asset, prev_state, new_state, reason, ema_pass, funding_pass, cl_pass
             )
         else:
-            log.debug(
+            log.info(
                 "REGIME %s: %s (unchanged) ema=%s fund=%s cl=%s",
                 asset,
                 new_state.value,
@@ -232,8 +232,8 @@ class RegimeMonitor:
                 asset, prev_state, new_state, reason, ema_pass, funding_pass, cl_pass
             )
         else:
-            log.debug(
-                "REGIME %s: %s ema=%s fund=%s cl=%s",
+            log.info(
+                "REGIME %s: %s (unchanged) ema=%s fund=%s cl=%s",
                 asset,
                 new_state.value,
                 ema_pass,
@@ -289,8 +289,8 @@ class RegimeMonitor:
             current = closes[-1]
 
         result = current < ema
-        log.debug(
-            "4h EMA %s: price=$%.2f ema=$%.2f → %s",
+        log.info(
+            "REGIME CHECK %s EMA: price=$%.2f ema=$%.2f → %s",
             asset,
             current,
             ema,
@@ -334,8 +334,8 @@ class RegimeMonitor:
         negative_count = sum(1 for r in rates if r < CFG.funding_rate_bear_threshold)
         result = negative_count >= CFG.funding_intervals_required
 
-        log.debug(
-            "Funding %s: rates=%s negative=%d/%d → %s",
+        log.info(
+            "REGIME CHECK %s Funding: rates=%s negative=%d/%d → %s",
             asset,
             [f"{r:.6f}" for r in rates],
             negative_count,
@@ -362,8 +362,8 @@ class RegimeMonitor:
         past_price = self._feeds.price_at(asset, target_ts)
 
         if past_price <= 0:
-            log.debug(
-                "CL 1h net %s: no history near T-60min (bot may have just started)",
+            log.info(
+                "REGIME CHECK %s CL1h: no history near T-60min (bot may have just started)",
                 asset,
             )
             return False
@@ -371,8 +371,8 @@ class RegimeMonitor:
         net_pct = (current - past_price) / past_price * 100
         result = net_pct <= CFG.chainlink_1h_net_pct_bear * 100
 
-        log.debug(
-            "CL 1h net %s: now=$%.2f 60min_ago=$%.2f net=%.4f%% → %s",
+        log.info(
+            "REGIME CHECK %s CL1h: now=$%.2f 60min_ago=$%.2f net=%.4f%% → %s",
             asset,
             current,
             past_price,

@@ -16,7 +16,9 @@
       "Bash(sed -n '95,120p' /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/feeds/regime.py)",
       "Bash(sed -n '51,100p' /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/engine/signal.py)",
       "Bash(grep -n \"blackout\\\\|BLACKOUT\\\\|{0, 2\\\\|0, 2, 6\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/core/config.py)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m ruff check feeds/regime.py check_regime.py)",
+      "Bash(python3 -m ruff format feeds/regime.py check_regime.py)"
     ]
   }
 }
