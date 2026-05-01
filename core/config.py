@@ -57,7 +57,9 @@ class Config:
     # Gate 5: delta ≥ min_delta_pct from window open (DOWN direction)
     # Gate 6: Binance 1-min confirms DOWN
     # Gate 7: NO token best_ask in [no_price_min, no_price_max]
-    blackout_hours: set = field(default_factory=lambda: {0, 2, 6, 7, 17})
+    blackout_hours: set = field(
+        default_factory=set
+    )  # no blackout — set from shadow data
 
     # Delta tiers — define the snipe window entry point
     strong_delta_pct: float = 0.025  # STRONG: delta ≥ 0.025% → enter from T-75s
@@ -74,16 +76,20 @@ class Config:
     snipe_exit_sec: float = 20.0
 
     # NO token price range — outside this means negative EV or already priced in
-    no_price_min: float = 0.37
-    no_price_max: float = 0.53
+    no_price_min: float = 0.30  # widened from 0.37 — bear regime NO tokens price higher
+    no_price_max: float = 0.63  # widened from 0.53 — bear regime NO tokens price higher
 
     # ── Anti-decoy filters (applied after Gate 7) ────────────────────
     # Applied in order; first failure rejects the signal.
     # Never remove a filter without ≥ 30-trade data showing zero catches.
     consecutive_down_ticks_required: int = 3  # ticks all below window open
-    volatility_damper_pct: float = 0.0008  # 5-min CL range > 0.08% → skip
+    volatility_damper_pct: float = (
+        0.002  # 5-min CL range > 0.2% → skip (was 0.08% — too tight for bear moves)
+    )
     rebound_veto_ratio: float = 0.30  # UP recovery > 30% of drop → skip
-    no_book_depth_min_usd: float = 200.0  # minimum NO side liquidity
+    no_book_depth_min_usd: float = (
+        100.0  # minimum NO side liquidity (was $200 — NO tokens thinner than YES)
+    )
 
     # Staleness gate — both feeds must not be stale at the same time
     cl_staleness_hard_sec: float = 30.0
