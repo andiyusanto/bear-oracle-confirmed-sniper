@@ -91,7 +91,7 @@ async def send(text: str, parse_mode: str = "HTML", _retries: int = 3) -> bool:
 async def notify_shadow_started(assets: list[str]) -> bool:
     ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     msg = (
-        f"👁 <b>SHADOW MODE STARTED</b>\n"
+        f"👁 <b>SHADOW MODE STARTED</b> — Bear Oracle Sniper\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Time: {ts}\n"
         f"Assets: <b>{', '.join(assets)}</b>\n"
@@ -108,7 +108,7 @@ async def notify_shadow_pass(signal) -> bool:
     tier = signal.delta_tier
     tier_emoji = {"STRONG": "🔴", "NORMAL": "🟠", "WEAK": "🟡"}.get(tier, "⚪")
     msg = (
-        f"✅ <b>SHADOW PASS</b> {tier_emoji}\n"
+        f"✅ <b>SHADOW PASS</b> {tier_emoji} — Bear Oracle Sniper\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Asset: <b>{token.asset} {token.duration}</b>\n"
         f"NO ask: <b>${signal.entry_price:.4f}</b>\n"
@@ -137,7 +137,7 @@ async def notify_regime_change(
         f"CL 1h: {'✓' if chainlink_pass else '✗'}"
     )
     msg = (
-        f"{state_emoji} <b>REGIME CHANGE — {asset}</b>\n"
+        f"{state_emoji} <b>REGIME CHANGE — {asset}</b> — Bear Oracle Sniper\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"{prev_state} → <b>{new_state}</b>\n"
         f"{checks}\n"
@@ -166,7 +166,7 @@ async def notify_shadow_stopped(
     gate_lines = "\n".join(f"  {g}: {c}" for g, c in top_gates) or "  (none)"
 
     msg = (
-        f"🛑 <b>SHADOW MODE STOPPED</b>\n"
+        f"🛑 <b>SHADOW MODE STOPPED</b> — Bear Oracle Sniper\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Duration: <b>{h:02d}:{m:02d}:{s:02d}</b>\n"
         f"Evaluations: <b>{total}</b> ({rate_per_min:.1f}/min)\n"
