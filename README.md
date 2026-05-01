@@ -214,7 +214,7 @@ CLOB library: `pip install py-clob-client-v2` (import as `py_clob_client`).
 ### 1. Install dependencies
 
 ```bash
-pip install py-clob-client-v2 aiohttp websockets rich python-dotenv web3
+pip install -r requirements.txt
 ```
 
 ### 2. Configure credentials

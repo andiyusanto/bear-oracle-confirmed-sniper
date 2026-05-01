@@ -40,14 +40,14 @@ _CTF_SLOT_ABI = [
 log = logging.getLogger("bear.markets")
 
 try:
-    from py_clob_client.client import ClobClient
+    from py_clob_client_v2.client import ClobClient
 
     HAS_CLOB = True
 except ImportError:
     HAS_CLOB = False
 
 try:
-    from py_clob_client.constants import POLYGON
+    from py_clob_client_v2.constants import POLYGON
 except ImportError:
     POLYGON = 137
 
@@ -251,6 +251,16 @@ class MarketDiscovery:
                 cid = m.get("conditionId") or m.get("condition_id") or ""
                 dur_str = dur_label.replace("m", "min")
 
+                # BTC/ETH/SOL updown markets are always NegRisk CTF markets.
+                # Prefer the API field; fall back to True for known NegRisk assets.
+                _nr_flag = (
+                    m.get("enableNegRisk") or m.get("negRisk") or m.get("neg_risk")
+                )
+                if _nr_flag is None:
+                    neg_risk = asset in ("BTC", "ETH", "SOL")
+                else:
+                    neg_risk = bool(_nr_flag)
+
                 for i, tid in enumerate(tids):
                     tid = str(tid)
                     oc = str(outcomes[i]).lower() if i < len(outcomes) else ""
@@ -273,6 +283,7 @@ class MarketDiscovery:
                         book_price=price,
                         book_updated=0.0,
                         conditionId=cid,
+                        neg_risk=neg_risk,
                     )
 
                     # Trigger opening price capture for this window

@@ -24,6 +24,7 @@ class Token:
     book_spread: float = 0.0  # bid-ask spread fraction (e.g. 0.15 = 15%)
     book_depth_usd: float = 0.0  # ask-side liquidity depth in USD
     conditionId: str = ""  # CTF conditionId for redemption
+    neg_risk: bool = False  # True for NegRisk CTF markets (BTC/ETH/SOL updown)
 
 
 @dataclass
