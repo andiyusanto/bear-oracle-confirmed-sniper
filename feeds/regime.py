@@ -12,7 +12,7 @@ Transitions are written to SQLite. Errors default to NEUTRAL (fail-safe).
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 import aiohttp
 
@@ -40,9 +40,15 @@ _SYMBOLS: dict[str, str] = {
 class RegimeMonitor:
     """Maintains bear-regime state for each asset via a 15-minute async cycle."""
 
-    def __init__(self, db: Database, feeds: "PriceFeeds") -> None:
+    def __init__(
+        self,
+        db: Database,
+        feeds: "PriceFeeds",
+        on_transition: Optional[Callable[..., Awaitable[None]]] = None,
+    ) -> None:
         self._db = db
         self._feeds = feeds
+        self._on_transition = on_transition
         # In-memory cache — updated every regime cycle, read by BearEngine
         self._cache: dict[str, RegimeState] = {
             a: RegimeState.NEUTRAL for a in CFG.assets
@@ -108,16 +114,9 @@ class RegimeMonitor:
                 new_state.value,
                 reason,
             )
-            self._db.log_regime_transition(
-                asset=asset,
-                prev_state=prev_state.value,
-                new_state=new_state.value,
-                reason=reason,
-                ema_pass=ema_pass,
-                funding_pass=funding_pass,
-                chainlink_pass=cl_pass,
+            await self._fire_transition(
+                asset, prev_state, new_state, reason, ema_pass, funding_pass, cl_pass
             )
-            self._cache[asset] = new_state
         else:
             log.debug(
                 "REGIME %s: %s (unchanged) ema=%s fund=%s cl=%s",
@@ -150,6 +149,41 @@ class RegimeMonitor:
         self._running = False
 
     # ── Internal helpers ─────────────────────────────────────────────
+
+    async def _fire_transition(
+        self,
+        asset: str,
+        prev_state: RegimeState,
+        new_state: RegimeState,
+        reason: str,
+        ema_pass: bool,
+        funding_pass: bool,
+        cl_pass: bool,
+    ) -> None:
+        """Write transition to DB and fire optional callback (e.g. Telegram)."""
+        self._db.log_regime_transition(
+            asset=asset,
+            prev_state=prev_state.value,
+            new_state=new_state.value,
+            reason=reason,
+            ema_pass=ema_pass,
+            funding_pass=funding_pass,
+            chainlink_pass=cl_pass,
+        )
+        self._cache[asset] = new_state
+        if self._on_transition:
+            try:
+                await self._on_transition(
+                    asset=asset,
+                    prev_state=prev_state.value,
+                    new_state=new_state.value,
+                    reason=reason,
+                    ema_pass=ema_pass,
+                    funding_pass=funding_pass,
+                    chainlink_pass=cl_pass,
+                )
+            except Exception as exc:
+                log.debug("on_transition callback error: %s", exc)
 
     async def _check_all(self) -> None:
         """Check all assets in parallel — one aiohttp session shared."""
@@ -194,16 +228,9 @@ class RegimeMonitor:
                 new_state.value,
                 reason,
             )
-            self._db.log_regime_transition(
-                asset=asset,
-                prev_state=prev_state.value,
-                new_state=new_state.value,
-                reason=reason,
-                ema_pass=ema_pass,
-                funding_pass=funding_pass,
-                chainlink_pass=cl_pass,
+            await self._fire_transition(
+                asset, prev_state, new_state, reason, ema_pass, funding_pass, cl_pass
             )
-            self._cache[asset] = new_state
         else:
             log.debug(
                 "REGIME %s: %s ema=%s fund=%s cl=%s",

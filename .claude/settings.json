@@ -12,7 +12,9 @@
       "Bash(touch core/__init__.py feeds/__init__.py engine/__init__.py execution/__init__.py ui/__init__.py analysis/__init__.py)",
       "Bash(ruff check *)",
       "Bash(ruff format *)",
-      "Read(//home/tengkorakhitam/**)"
+      "Read(//home/tengkorakhitam/**)",
+      "Bash(sed -n '95,120p' /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/feeds/regime.py)",
+      "Bash(sed -n '51,100p' /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/engine/signal.py)"
     ]
   }
 }

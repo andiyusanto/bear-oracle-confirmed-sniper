@@ -38,6 +38,7 @@ from rich.text import Text
 from core.config import CFG
 from core.database import Database
 from core.shadow import GATES, GATE_LABELS, ShadowLogger
+from core import telegram
 from feeds.markets import MarketDiscovery
 from feeds.prices import PriceFeeds
 from feeds.regime import RegimeMonitor
@@ -233,7 +234,7 @@ async def run(db_path: str, duration: float) -> None:
     db = Database(db_path)
     shadow = ShadowLogger()
     feeds = PriceFeeds()
-    regime = RegimeMonitor(db, feeds)
+    regime = RegimeMonitor(db, feeds, on_transition=telegram.notify_regime_change)
     markets = MarketDiscovery(price_feeds=feeds)
     engine = BearEngine(feeds, regime, shadow=shadow)
 
@@ -259,6 +260,8 @@ async def run(db_path: str, duration: float) -> None:
 
     await markets.discover()
     log.info("Initial discovery: %d NO tokens", len(markets.tokens))
+
+    await telegram.notify_shadow_started(CFG.assets)
 
     start_ts = time.time()
     console = Console()
@@ -288,7 +291,9 @@ async def run(db_path: str, duration: float) -> None:
                     if ttl < 0 or ttl > CFG.snipe_entry_strong_sec + 5:
                         continue  # outside any snipe window — skip book refresh
                     await markets.refresh_book(token)
-                    engine.evaluate(token)  # result discarded — shadow logs gate
+                    signal = engine.evaluate(token)
+                    if signal is not None:
+                        await telegram.notify_shadow_pass(signal)
 
                 # Batch-flush shadow log to DB every 5 seconds
                 if now - _last_flush_ts >= 5.0:
@@ -326,6 +331,13 @@ async def run(db_path: str, duration: float) -> None:
 
     # ── End-of-session summary ────────────────────────────────────────
     _print_summary(shadow, db, start_ts, console)
+    await telegram.notify_shadow_stopped(
+        total=shadow.total(),
+        passes=shadow.passes(),
+        elapsed_sec=shadow.session_elapsed(),
+        rate_per_min=shadow.rate_per_min(),
+        gate_counts=shadow.counts(),
+    )
 
 
 def _print_summary(

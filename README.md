@@ -65,6 +65,7 @@ analysis/
   shadow_report.py           Post-run shadow mode gate breakdown and PASS signals
   analyze.py                 Live trade analysis with regime overlay
 setup.py                     Derive API creds from private key → .env
+get_creds.py                 Cloudflare-safe credential generator (curl_cffi)
 wrap_pusd.py                 Convert USDC.e → pUSD via Collateral Onramp
 approve_usdc.py              On-chain pUSD approve() for V2 CLOB contracts
 withdraw.py                  Interactive pUSD withdrawal
@@ -87,10 +88,16 @@ redeem_now.py                Manual CTF redemption
 | `ui/dashboard.py` | Done |
 | `shadow.py` | Done |
 | `analysis/shadow_report.py` | Done |
+| `setup.py` | Done |
+| `get_creds.py` | Done |
+| `wrap_pusd.py` | Done |
+| `approve_usdc.py` | Done |
+| `.env.example` | Done |
 | `bot.py` | Pending |
 | `execution/executor.py` | Pending |
 | `analysis/analyze.py` | Pending |
-| `setup.py`, on-chain scripts | Pending |
+| `withdraw.py` | Pending |
+| `redeem_now.py` | Pending |
 
 ---
 
@@ -158,7 +165,7 @@ Active since April 28, 2026. Collateral: **pUSD** (not USDC.e).
 | NegRisk CTF Exchange V2 | `0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296` |
 | USDC Transfer Helper V2 | `0xe2222d279d744050d28e00520010520000310F59` |
 
-CLOB library: `py-clob-client-v2` (import as `py_clob_client`).
+CLOB library: `py-clob-client-v2` (import as `py_clob_client_v2`).
 
 ---
 
@@ -214,7 +221,7 @@ Copy the example and fill in your wallet credentials:
 cp .env.example .env
 ```
 
-Edit `.env` — set these two fields:
+Edit `.env` — set these two fields only:
 
 ```
 POLY_PRIVATE_KEY=0x<your_private_key>
@@ -223,11 +230,31 @@ POLY_FUNDER_ADDRESS=0x<your_wallet_address>
 
 > **Security**: `.env` is gitignored. Never commit private keys.
 
-Run setup to derive API credentials and write them back to `.env`:
+**Option A — standard (run on your server):**
 
 ```bash
 python setup.py
 ```
+
+**Option B — if `setup.py` is blocked by Cloudflare** (common on cloud/VPS IPs):
+
+Run this on your **local machine** instead. It uses `curl_cffi` to impersonate
+Chrome's TLS fingerprint and bypasses Cloudflare bot detection:
+
+```bash
+# On your local machine
+pip install curl_cffi py-clob-client-v2 python-dotenv
+python get_creds.py
+```
+
+Then copy the populated `.env` to the server:
+
+```bash
+scp .env <user>@<server>:~/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/.env
+```
+
+Before running either script, make sure your wallet is registered on Polymarket —
+connect it at **app.polymarket.com** and complete the sign-in at least once.
 
 Expected output:
 ```
@@ -293,19 +320,23 @@ USDC Transfer Helper). Skips any already-approved spender automatically.
 Expected output:
 ```
 --- CTF Exchange (V2) ---
-  ✅ Approved! Block: 68432105
+  Approved! Block: 68432105
 
 --- NegRisk CTF Exchange (V2) ---
-  ✅ Approved! Block: 68432108
+  Approved! Block: 68432108
 
 --- USDC Transfer Helper (V2) ---
-  ✅ Approved! Block: 68432111
+  Approved! Block: 68432111
 
 --- Final Allowance Check ---
-  ✅ CTF Exchange (V2): $115792089237316195423570985008687907853269984665640564039457584007913129.64 USDC
-  ✅ NegRisk CTF Exchange (V2): ...
-  ✅ USDC Transfer Helper (V2): ...
+  [OK] CTF Exchange (V2): $115792...
+  [OK] NegRisk CTF Exchange (V2): $115792...
+  [OK] USDC Transfer Helper (V2): $115792...
 ```
+
+> **Note**: The final allowance check may show `[MISSING]` for USDC Transfer Helper
+> even after a confirmed approval. This is the known Polygon RPC stale-read issue —
+> the on-chain approval is real (`receipt.status == 1`). The bot is ready to trade.
 
 ---
 
@@ -629,6 +660,13 @@ filter is too loose or the bear trend has ended.
 - Known false alarm from CLOB backend allowance view
 - What matters is the on-chain `approve_usdc.py` ran successfully
 - Verify on Polygonscan that the approve() tx confirmed with status 1
+
+**`setup.py` blocked by Cloudflare (403 / "Could not derive api key")**
+- Cloud/VPS IPs (GCP, AWS, DigitalOcean) and some residential IPs are blocked
+  by Cloudflare on Polymarket's auth endpoints
+- Use `get_creds.py` from your local machine instead — it uses `curl_cffi` to
+  impersonate Chrome's TLS fingerprint and bypasses the block
+- Then `scp .env` to the server
 
 **`py_clob_client_v2` import error**
 - Ensure virtual environment is activated: `source venv/bin/activate`
