@@ -208,18 +208,22 @@ pip install -r requirements.txt
 
 ### 4. Create credentials file
 
-Create `pre_setup.env` with your wallet credentials:
+Copy the example and fill in your wallet credentials:
 
 ```bash
-cat > pre_setup.env << 'EOF'
-POLY_PRIVATE_KEY=0x<your_private_key>
-POLY_FUNDER_ADDRESS=0x<your_wallet_address>
-EOF
+cp .env.example .env
 ```
 
-> **Security**: `pre_setup.env` and `.env` are gitignored. Never commit private keys.
+Edit `.env` — set these two fields:
 
-Run setup to derive API credentials and write `.env`:
+```
+POLY_PRIVATE_KEY=0x<your_private_key>
+POLY_FUNDER_ADDRESS=0x<your_wallet_address>
+```
+
+> **Security**: `.env` is gitignored. Never commit private keys.
+
+Run setup to derive API credentials and write them back to `.env`:
 
 ```bash
 python setup.py
@@ -227,13 +231,11 @@ python setup.py
 
 Expected output:
 ```
---- 🔑 Generating API Credentials ---
+--- Generating API Credentials ---
   API Key:        <key>
   API Secret:     xxxxxxxx...
   API Passphrase: xxxxxxxx...
---- 🛡️ Setting USDC.e Allowance ---
-  ✅ Allowance set.
-✅ Done! Credentials written to '.env'
+Done. Credentials written to '.env'
 ```
 
 Verify `.env` was written:
