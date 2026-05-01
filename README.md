@@ -36,8 +36,7 @@ Target WR > 58%  (13-point buffer above breakeven)
 Halt threshold:  52% rolling WR over last 20 trades
 ```
 
-All WR displays in the dashboard and analyze.py use 44.7% as the reference
-line — not the bull bot's 62.2%.
+All WR displays use 44.7% as the reference line — not the bull bot's 62.2%.
 
 ---
 
@@ -147,52 +146,6 @@ Applied in order; first failure rejects the signal:
 
 ---
 
-## Shadow Mode
-
-Shadow mode runs the complete pipeline — feeds, regime checks, market
-discovery, and signal evaluation — with **zero trades**. Every gate evaluation
-is logged to SQLite so you can verify the strategy before risking capital.
-
-```bash
-python shadow.py                  # run until Ctrl+C
-python shadow.py --duration 3600  # stop after 1 hour
-python shadow.py --db my.db       # custom DB path (default: shadow_run.db)
-```
-
-**What it verifies:**
-- Chainlink RTDS and Binance feeds are streaming live prices
-- Regime monitor is evaluating all 3 sub-checks correctly
-- NO tokens are being discovered for BTC/ETH/SOL markets
-- Signal gates are firing and rejecting at the right stages
-- PASS signals are appearing (strategy has live edge before paper trading)
-
-The live dashboard shows:
-- Per-asset feed health (Chainlink price, Binance price, staleness, 1h net)
-- Per-asset regime state with sub-check breakdown (EMA / Funding / CL 1h)
-- Gate rejection breakdown with bar chart and percentages
-- Eval rate, PASS rate, and market count in the footer
-
-**After the run, generate a full report:**
-
-```bash
-python analysis/shadow_report.py                    # full breakdown
-python analysis/shadow_report.py --passes-only      # just PASS signals
-python analysis/shadow_report.py --since 3600       # last 1 hour only
-```
-
-The report shows gate rejection share, per-asset breakdown, regime filter
-efficiency, hourly PASS rate (with blackout hours marked), and the last 30
-would-be PASS signals with price, delta, TTL, and reason string.
-
-**Minimum viable shadow run before paper trading:**
-- ≥ 2 hours of data
-- At least one PASS signal per asset observed
-- Gate 2 (regime) accounting for the majority of rejections — this is expected
-  and correct (markets spend most time outside bear regime)
-- No PASS signals during blackout hours
-
----
-
 ## Polymarket V2 Infrastructure
 
 Active since April 28, 2026. Collateral: **pUSD** (not USDC.e).
@@ -205,52 +158,435 @@ Active since April 28, 2026. Collateral: **pUSD** (not USDC.e).
 | NegRisk CTF Exchange V2 | `0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296` |
 | USDC Transfer Helper V2 | `0xe2222d279d744050d28e00520010520000310F59` |
 
-CLOB library: `pip install py-clob-client-v2` (import as `py_clob_client`).
+CLOB library: `py-clob-client-v2` (import as `py_clob_client`).
+
+---
+
+## Prerequisites
+
+- Python 3.11+
+- tmux (`apt install tmux` / `brew install tmux`)
+- MATIC in your wallet for gas (≥ 1 MATIC recommended)
+- USDC.e on Polygon (to convert to pUSD)
+- Polymarket account with a funded funder wallet
+
+Verify Python version:
+
+```bash
+python3 --version   # must be 3.11+
+tmux -V             # must be 3.x+
+```
 
 ---
 
 ## Setup
 
-### 1. Install dependencies
+### 1. Navigate to the project directory
+
+```bash
+cd /path/to/bear-oracle-confirmed-sniper
+```
+
+### 2. Create and activate virtual environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+Add to your shell profile to auto-activate when entering the directory (optional):
+
+```bash
+echo 'source venv/bin/activate' >> .envrc   # direnv users
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure credentials
+### 4. Create credentials file
+
+Create `pre_setup.env` with your wallet credentials:
 
 ```bash
-python setup.py   # derives API keys from private key, writes .env
+cat > pre_setup.env << 'EOF'
+POLY_PRIVATE_KEY=0x<your_private_key>
+POLY_FUNDER_ADDRESS=0x<your_wallet_address>
+EOF
 ```
 
-### 3. Fund wallet with pUSD
+> **Security**: `pre_setup.env` and `.env` are gitignored. Never commit private keys.
+
+Run setup to derive API credentials and write `.env`:
 
 ```bash
-python wrap_pusd.py    # convert USDC.e → pUSD (one-time)
-python approve_usdc.py # approve pUSD for CLOB spending (one-time)
+python setup.py
 ```
 
-### 4. Run shadow mode (verify strategy setup)
-
-```bash
-python shadow.py --duration 7200   # 2-hour minimum recommended
-python analysis/shadow_report.py   # review gate breakdown and PASS signals
+Expected output:
+```
+--- 🔑 Generating API Credentials ---
+  API Key:        <key>
+  API Secret:     xxxxxxxx...
+  API Passphrase: xxxxxxxx...
+--- 🛡️ Setting USDC.e Allowance ---
+  ✅ Allowance set.
+✅ Done! Credentials written to '.env'
 ```
 
-Do not proceed to paper trading until shadow mode confirms:
-- Feeds streaming, regime evaluating, PASS signals appearing
-
-### 5. Run in paper mode
+Verify `.env` was written:
 
 ```bash
+grep POLY_API_KEY .env   # should print a non-empty value
+```
+
+### 5. (Optional) Configure Telegram alerts
+
+Add to `.env`:
+
+```bash
+TELEGRAM_BOT_TOKEN=<bot_token_from_botfather>
+TELEGRAM_CHAT_ID=<your_chat_id>
+```
+
+Get your chat ID by messaging `@userinfobot` on Telegram.
+
+### 6. Fund wallet with pUSD (one-time)
+
+pUSD is the only accepted collateral on Polymarket V2. Convert your USDC.e:
+
+```bash
+python wrap_pusd.py
+```
+
+Expected output:
+```
+  USDC.e balance: $500.000000
+  pUSD   balance: $0.000000
+
+--- Step 1: Approve Collateral Onramp for USDC.e ---
+  ✅ Already approved. Skipping.
+
+--- Step 2: Wrap $500.000000 USDC.e → pUSD ---
+  Tx sent (wrap): 0x...
+  ✅ Confirmed! Block: 68432100
+
+--- Final Balance Check ---
+  USDC.e: $0.000000
+  pUSD:   $500.000000
+✅ Wrap complete. Now run: python3 approve_usdc.py
+```
+
+### 7. Approve pUSD for V2 exchange contracts (one-time)
+
+```bash
+python approve_usdc.py
+```
+
+This approves pUSD for all three V2 contracts (CTF Exchange, NegRisk CTF Exchange,
+USDC Transfer Helper). Skips any already-approved spender automatically.
+
+Expected output:
+```
+--- CTF Exchange (V2) ---
+  ✅ Approved! Block: 68432105
+
+--- NegRisk CTF Exchange (V2) ---
+  ✅ Approved! Block: 68432108
+
+--- USDC Transfer Helper (V2) ---
+  ✅ Approved! Block: 68432111
+
+--- Final Allowance Check ---
+  ✅ CTF Exchange (V2): $115792089237316195423570985008687907853269984665640564039457584007913129.64 USDC
+  ✅ NegRisk CTF Exchange (V2): ...
+  ✅ USDC Transfer Helper (V2): ...
+```
+
+---
+
+## Running with tmux
+
+tmux keeps the bot alive after you disconnect from SSH and lets you split the
+terminal into panes for simultaneous monitoring.
+
+### tmux primer (essential commands)
+
+| Action | Keys |
+|--------|------|
+| Detach from session (bot keeps running) | `Ctrl+b d` |
+| Reattach to session | `tmux attach -t bear` |
+| Split pane horizontally | `Ctrl+b "` |
+| Split pane vertically | `Ctrl+b %` |
+| Switch pane | `Ctrl+b ←/→/↑/↓` |
+| Scroll up in pane | `Ctrl+b [` then arrow keys (q to exit) |
+| Kill current pane | `Ctrl+b x` |
+| List sessions | `tmux ls` |
+
+---
+
+### Phase 1 — Shadow mode (verify before trading)
+
+Shadow mode runs the complete pipeline with **zero trades**. Verify feeds,
+regime checks, and signal gates are working before risking capital.
+
+**Create a dedicated tmux session:**
+
+```bash
+tmux new-session -s bear-shadow
+source venv/bin/activate
+python shadow.py --duration 7200   # 2-hour minimum run
+```
+
+**Detach and let it run in background:**
+
+```bash
+Ctrl+b d
+```
+
+**Check on it later:**
+
+```bash
+tmux attach -t bear-shadow
+```
+
+**After 2+ hours, generate the shadow report:**
+
+```bash
+# In a new terminal (or split pane)
+source venv/bin/activate
+python analysis/shadow_report.py
+```
+
+**Minimum criteria before proceeding to paper mode:**
+
+- [ ] Feeds streaming: Chainlink and Binance prices updating, CL age < 30s
+- [ ] Regime evaluating: EMA / Funding / CL 1h sub-checks firing per asset
+- [ ] NO tokens discovered: at least 1 active market per asset visible
+- [ ] Gate 2 (regime) accounts for majority of rejections — this is expected
+- [ ] At least one PASS signal per asset observed
+- [ ] Zero PASS signals during blackout hours `{0, 2, 6, 7, 17} UTC`
+
+If regime is blocking 100% and no PASSes appear, the market is not in a bear
+regime. This is correct — do not loosen the filters. Wait for a genuine bear regime.
+
+**Kill shadow session when done:**
+
+```bash
+tmux kill-session -t bear-shadow
+```
+
+---
+
+### Phase 2 — Paper trading
+
+Paper mode executes the full signal pipeline and logs trades to SQLite with
+simulated fills (slippage modeled). No real orders are placed.
+
+**Create the paper trading session with a 3-pane layout:**
+
+```bash
+tmux new-session -s bear
+```
+
+**Split into 3 panes (bot + logs + analysis):**
+
+```
+Ctrl+b "       # split horizontally → top and bottom panes
+Ctrl+b ↑       # go back to top pane
+Ctrl+b %       # split top pane vertically → left and right
+```
+
+Layout:
+```
+┌─────────────────────┬─────────────────────┐
+│  Pane 1: Bot UI     │  Pane 2: Log tail   │
+│  (Rich dashboard)   │  (live log file)    │
+├─────────────────────┴─────────────────────┤
+│  Pane 3: Analysis / ad-hoc commands       │
+└───────────────────────────────────────────┘
+```
+
+**Pane 1 — start the bot:**
+
+```bash
+source venv/bin/activate
 python bot.py
 ```
 
-### 6. Run live (after paper validates ≥ 20 trades at WR > 52%)
+**Pane 2 (Ctrl+b →) — tail the log:**
+
+```bash
+source venv/bin/activate
+tail -f logs/$(date +%Y-%m-%d)_bot.log
+```
+
+**Pane 3 (Ctrl+b ↓) — run analysis while bot runs:**
+
+```bash
+source venv/bin/activate
+python analysis/analyze.py --watch
+```
+
+**Detach and let it run:**
+
+```bash
+Ctrl+b d
+```
+
+**Reattach later:**
+
+```bash
+tmux attach -t bear
+```
+
+**Paper mode exit criteria (before going live):**
+
+- [ ] ≥ 20 closed trades
+- [ ] Rolling 20-trade WR > 52%
+- [ ] Avg entry price in `$0.37–$0.47`
+- [ ] No PASS signals during blackout hours
+- [ ] Daily loss cap never triggered
+- [ ] Max concurrent (2) never exceeded simultaneously
+
+---
+
+### Phase 3 — Live trading
+
+Only proceed after paper mode meets all exit criteria above.
+
+**In the existing `bear` session, stop the paper bot:**
+
+```bash
+Ctrl+c   # in Pane 1
+```
+
+**Verify pUSD balance before going live:**
+
+```bash
+# Pane 3
+python -c "
+from dotenv import dotenv_values
+from web3 import Web3
+env = dotenv_values('.env')
+w3 = Web3(Web3.HTTPProvider('https://rpc.ankr.com/polygon'))
+pusd = w3.eth.contract(
+    address=Web3.to_checksum_address('0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'),
+    abi=[{'name':'balanceOf','type':'function','inputs':[{'name':'account','type':'address'}],'outputs':[{'name':'','type':'uint256'}],'stateMutability':'view'}]
+)
+bal = pusd.functions.balanceOf(Web3.to_checksum_address(env['POLY_FUNDER_ADDRESS'])).call() / 1e6
+print(f'pUSD balance: \${bal:.2f}')
+"
+```
+
+**Start live bot (Pane 1):**
 
 ```bash
 python bot.py --live --confirm-live --accept-risk --portfolio 500
 ```
+
+Replace `500` with your actual pUSD portfolio size. The bot uses this to
+calculate position sizing relative to the configured stake per trade.
+
+**Live monitoring layout — recommended 4-pane setup:**
+
+```bash
+# In the bear session, add a 4th pane for redemption/withdraw ops
+Ctrl+b "        # split bottom pane
+```
+
+```
+┌─────────────────────┬─────────────────────┐
+│  Pane 1: Live bot   │  Pane 2: Log tail   │
+│  (Rich dashboard)   │                     │
+├─────────────────────┼─────────────────────┤
+│  Pane 3: analyze    │  Pane 4: on-chain   │
+│  --watch            │  ops (redeem/etc)   │
+└─────────────────────┴─────────────────────┘
+```
+
+**Pane 4 — on-chain operations (run as needed):**
+
+```bash
+# Redeem resolved winning positions
+python redeem_now.py
+
+# Withdraw pUSD to another address
+python withdraw.py
+```
+
+---
+
+## Managing a Running Session
+
+### Reattach after SSH disconnect
+
+```bash
+tmux attach -t bear
+```
+
+If you have multiple sessions:
+
+```bash
+tmux ls                 # list all sessions
+tmux attach -t bear     # attach by name
+```
+
+### Check bot status without attaching
+
+```bash
+# Tail last 50 lines of today's log
+tail -50 logs/$(date +%Y-%m-%d)_bot.log
+
+# Quick trade count from DB
+python -c "
+import sqlite3
+conn = sqlite3.connect('bear_trades.db')
+rows = conn.execute('SELECT status, COUNT(*) FROM trades GROUP BY status').fetchall()
+for r in rows: print(f'{r[0]}: {r[1]}')
+conn.close()
+"
+```
+
+### Graceful shutdown
+
+```bash
+# Attach to session
+tmux attach -t bear
+
+# In Pane 1 (bot)
+Ctrl+c      # sends SIGINT — bot completes any open positions then exits
+```
+
+### Force kill (emergency only)
+
+```bash
+tmux kill-session -t bear
+```
+
+This immediately terminates all panes. Any open paper positions are left in
+OPEN state in the DB — run `analyze.py` to reconcile manually.
+
+---
+
+## Analysis
+
+```bash
+# Shadow mode verification (before paper/live)
+python analysis/shadow_report.py
+python analysis/shadow_report.py --passes-only
+python analysis/shadow_report.py --since 3600   # last 1 hour
+
+# Live trade analysis (paper / live mode)
+python analysis/analyze.py                      # summary stats
+python analysis/analyze.py --watch              # live tail
+python analysis/analyze.py --regime             # regime state at each entry
+python analysis/analyze.py --decoys             # anti-decoy filter breakdown
+```
+
+All WR displays show a reference line at **44.7%** (breakeven).
 
 ---
 
@@ -265,21 +601,38 @@ python bot.py --live --confirm-live --accept-risk --portfolio 500
 | Max concurrent | 2 | — |
 | Daily loss cap | — | $15 kill switch |
 
+If the 20-trade rolling WR drops below 52%, the bot halts automatically and
+alerts via Telegram. Run `analyze.py --regime` to diagnose whether the regime
+filter is too loose or the bear trend has ended.
+
 ---
 
-## Analysis
+## Troubleshooting
 
-```bash
-# Shadow mode verification (before paper/live)
-python analysis/shadow_report.py
-python analysis/shadow_report.py --passes-only
-python analysis/shadow_report.py --since 3600
+**Feeds not streaming after 30s**
+- Check network connectivity and firewall rules for WebSocket connections
+- Chainlink RTDS uses `wss://ws-live-data.polymarket.com` — must be reachable
+- Binance uses `wss://data-stream.binance.com` — check if your server geolocates outside a blocked region
 
-# Live trade analysis (paper / live mode)
-python analysis/analyze.py                    # summary stats
-python analysis/analyze.py --watch            # live tail
-python analysis/analyze.py --regime           # regime overlay per trade
-python analysis/analyze.py --decoys           # anti-decoy filter breakdown
-```
+**No NO tokens discovered**
+- Gamma API may be slow — wait one full discovery cycle (30s)
+- Verify the asset slugs resolve: `curl "https://gamma-api.polymarket.com/events?slug=btc-updown-5m-<window_ts>"`
 
-All WR displays show a reference line at **44.7%** (breakeven).
+**Regime always NEUTRAL**
+- This is correct behavior when the market is not in a bear regime
+- Check sub-checks individually: EMA (price vs 4h EMA), funding rate (perp funding negative?), CL 1h net (>0.3% drop over 60 min?)
+- Do not bypass or soften Gate 0 — no regime means no edge
+
+**`setup.py` shows Allowance: $0.00`**
+- Known false alarm from CLOB backend allowance view
+- What matters is the on-chain `approve_usdc.py` ran successfully
+- Verify on Polygonscan that the approve() tx confirmed with status 1
+
+**`py_clob_client_v2` import error**
+- Ensure virtual environment is activated: `source venv/bin/activate`
+- Reinstall: `pip install -r requirements.txt --force-reinstall`
+
+**RPC timeout / stale balance after redemption**
+- Public Polygon RPCs return stale on-chain state immediately after a confirmed tx
+- `receipt.status == 1` is the source of truth — not the balance read right after
+- Wait 1–2 blocks (~3s) and recheck if needed
