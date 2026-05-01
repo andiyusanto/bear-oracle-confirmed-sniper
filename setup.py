@@ -59,11 +59,14 @@ def run_setup() -> None:
     print(f"  Funder: {funder or '(not set)'}")
 
     # ── Initialize CLOB client (Level 1 — key derivation only) ───
+    # use_server_time=True syncs the EIP-712 timestamp with Polymarket's clock,
+    # preventing "Could not derive api key" 400 errors caused by local clock skew.
     client = ClobClient(
         host="https://clob.polymarket.com",
         key=pk,
         chain_id=POLYGON,
         funder=funder or None,
+        use_server_time=True,
     )
 
     # ── Derive API credentials ────────────────────────────────────
@@ -71,6 +74,12 @@ def run_setup() -> None:
         creds = client.create_or_derive_api_key()
     except Exception as exc:
         print(f"❌ Failed to derive API credentials: {exc}")
+        print()
+        print("  Common causes:")
+        print("  1. Wallet not registered on Polymarket — visit app.polymarket.com,")
+        print("     connect this wallet, and complete the sign-in flow at least once.")
+        print("  2. Clock skew — already mitigated by use_server_time=True above.")
+        print("  3. Wrong POLY_FUNDER_ADDRESS — must match the wallet that holds pUSD.")
         sys.exit(1)
 
     print(f"  API Key:        {creds.api_key}")
@@ -95,6 +104,7 @@ def run_setup() -> None:
         key=pk,
         chain_id=POLYGON,
         funder=funder or None,
+        use_server_time=True,
         creds=ApiCreds(
             api_key=creds.api_key,
             api_secret=creds.api_secret,
