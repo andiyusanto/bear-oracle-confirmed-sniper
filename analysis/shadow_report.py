@@ -21,6 +21,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Ensure project root is on sys.path when run as a script
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 try:
     from rich.console import Console
     from rich.table import Table
