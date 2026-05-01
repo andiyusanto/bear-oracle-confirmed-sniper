@@ -68,7 +68,7 @@ def run_setup() -> None:
 
     # ── Derive API credentials ────────────────────────────────────
     try:
-        creds = client.create_or_derive_api_creds()
+        creds = client.create_or_derive_api_key()
     except Exception as exc:
         print(f"❌ Failed to derive API credentials: {exc}")
         sys.exit(1)

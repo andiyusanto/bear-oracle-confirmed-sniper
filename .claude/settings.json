@@ -11,7 +11,8 @@
       "Bash(mkdir -p core feeds engine execution ui analysis)",
       "Bash(touch core/__init__.py feeds/__init__.py engine/__init__.py execution/__init__.py ui/__init__.py analysis/__init__.py)",
       "Bash(ruff check *)",
-      "Bash(ruff format *)"
+      "Bash(ruff format *)",
+      "Read(//home/tengkorakhitam/**)"
     ]
   }
 }
