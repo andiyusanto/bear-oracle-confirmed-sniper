@@ -45,7 +45,7 @@ GATE_LABELS = {
     "DECOY_2_VOLATILITY": "Decoy 2 — Volatility damper",
     "DECOY_3_TICKS": "Decoy 3 — Consecutive ticks",
     "DECOY_4_REBOUND": "Decoy 4 — Micro-rebound veto",
-    "DECOY_5_DEPTH": "Decoy 5 — Depth < $200",
+    "DECOY_5_DEPTH": "Decoy 5 — Depth < $100",
     "PASS": "PASS — would have fired",
 }
 
