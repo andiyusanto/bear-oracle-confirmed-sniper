@@ -33,7 +33,7 @@ class Config:
     binance_rest: str = "https://fapi.binance.com"  # futures REST for regime checks
 
     # ── Assets and markets ──────────────────────────────────────────
-    assets: list = field(default_factory=lambda: ["BTC", "ETH", "SOL"])
+    assets: list = field(default_factory=lambda: ["BTC", "ETH", "SOL", "HYPE"])
     durations: list = field(default_factory=lambda: [("5m", 300), ("15m", 900)])
 
     # ── Gate 0 — Regime filter (15-minute async cycle) ──────────────

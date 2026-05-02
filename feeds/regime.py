@@ -34,6 +34,7 @@ _SYMBOLS: dict[str, str] = {
     "BTC": "BTCUSDT",
     "ETH": "ETHUSDT",
     "SOL": "SOLUSDT",
+    "HYPE": "HYPEUSDT",
 }
 
 

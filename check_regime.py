@@ -31,7 +31,12 @@ async def run() -> None:
 
     _KLINES_URL = f"{CFG.binance_rest}/fapi/v1/klines"
     _FUNDING_URL = f"{CFG.binance_rest}/fapi/v1/fundingRate"
-    _SYMBOLS = {"BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT"}
+    _SYMBOLS = {
+        "BTC": "BTCUSDT",
+        "ETH": "ETHUSDT",
+        "SOL": "SOLUSDT",
+        "HYPE": "HYPEUSDT",
+    }
 
     # Start feeds and wait for first tick
     feeds = PriceFeeds()

@@ -388,6 +388,8 @@ class PriceFeeds:
             return "ETH"
         if "sol" in s:
             return "SOL"
+        if "hype" in s:
+            return "HYPE"
         return ""
 
     def stop(self) -> None:

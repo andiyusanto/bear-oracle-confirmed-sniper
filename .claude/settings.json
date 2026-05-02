@@ -23,7 +23,12 @@
       "Bash(grep -n \"check_regime\\\\|0\\\\.08\\\\|\\\\$0\\\\.37\\\\|\\\\$0\\\\.53\\\\|\\\\$200\\\\|{0, 2\\\\|blackout_hours\\\\|Recent Changes\\\\|2026-05-01\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/README.md)",
       "Bash(grep -n \"0\\\\.37\\\\|0\\\\.53\\\\|\\\\$200\\\\|{0, 2\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/README.md)",
       "Bash(grep -n \"0\\\\.08\\\\|0\\\\.37\\\\|0\\\\.53\\\\|\\\\$200\\\\|{0, 2\\\\|blackout\\\\|check_regime\\\\|liquidity\\\\|Liquidity\\\\|volatility\\\\|Volatility\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/CLAUDE.md)",
-      "Bash(grep -n \"0\\\\.08\\\\|0\\\\.37\\\\|0\\\\.53\\\\|\\\\$200\\\\|{0, 2\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/CLAUDE.md)"
+      "Bash(grep -n \"0\\\\.08\\\\|0\\\\.37\\\\|0\\\\.53\\\\|\\\\$200\\\\|{0, 2\" /home/tengkorakhitam/polymarket-arbitrage-bot/bear-oracle-confirmed-sniper/CLAUDE.md)",
+      "WebSearch",
+      "WebFetch(domain:polymarket.com)",
+      "WebFetch(domain:docs.chain.link)",
+      "WebFetch(domain:data.chain.link)",
+      "Bash(pip show *)"
     ]
   }
 }
