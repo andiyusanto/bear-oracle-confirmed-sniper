@@ -29,7 +29,7 @@ class Config:
     clob_host: str = "https://clob.polymarket.com"
     gamma_url: str = "https://gamma-api.polymarket.com/events"
     rtds_url: str = "wss://ws-live-data.polymarket.com"
-    binance_ws: str = "wss://data-stream.binance.com/stream"
+    binance_ws: str = "wss://fstream.binance.com/stream"  # futures — covers HYPE + consistent with REST
     binance_rest: str = "https://fapi.binance.com"  # futures REST for regime checks
 
     # ── Assets and markets ──────────────────────────────────────────
